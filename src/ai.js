@@ -1,8 +1,8 @@
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { CONFIG } from './config.js';
 
-const openai = new OpenAI({
-  apiKey: CONFIG.openaiApiKey,
+const anthropic = new Anthropic({
+  apiKey: CONFIG.anthropicApiKey,
 });
 
 const DEFAULT_PROMPT = `You are an expert at analyzing meeting notes and transcripts to extract actionable items.
@@ -43,7 +43,7 @@ Return your response as a JSON array of action items with this structure:
 If no action items are found, return: { "actionItems": [] }`;
 
 /**
- * Extract action items from meeting content using OpenAI
+ * Extract action items from meeting content using Claude
  */
 export async function extractActionItems(meeting, customPrompt = null) {
   const prompt = customPrompt || DEFAULT_PROMPT;
@@ -65,17 +65,22 @@ export async function extractActionItems(meeting, customPrompt = null) {
   }
 
   try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
       messages: [
-        { role: 'system', content: prompt },
-        { role: 'user', content: content },
+        { role: 'user', content: `${prompt}\n\n${content}` },
       ],
-      response_format: { type: 'json_object' },
-      temperature: 0.3, // Lower temperature for more consistent extraction
     });
 
-    const result = JSON.parse(response.choices[0].message.content);
+    // Extract JSON from Claude's response
+    const responseText = response.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response');
+    }
+
+    const result = JSON.parse(jsonMatch[0]);
 
     // Add meeting context to each action item
     const actionItems = (result.actionItems || []).map((item, index) => ({

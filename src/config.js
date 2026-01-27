@@ -26,7 +26,7 @@ function getGranolaCachePath() {
 }
 
 export const CONFIG = {
-  openaiApiKey: process.env.OPENAI_API_KEY,
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY,
   linearApiKey: process.env.LINEAR_API_KEY,
   linearTeamId: process.env.LINEAR_TEAM_ID || null,
   port: parseInt(process.env.PORT || '3847', 10),
@@ -38,8 +38,8 @@ export const CONFIG = {
 export function validateConfig() {
   const errors = [];
 
-  if (!CONFIG.openaiApiKey) {
-    errors.push('OPENAI_API_KEY is required');
+  if (!CONFIG.anthropicApiKey) {
+    errors.push('ANTHROPIC_API_KEY is required');
   }
 
   if (!CONFIG.linearApiKey) {
