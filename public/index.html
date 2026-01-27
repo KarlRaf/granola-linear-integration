@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Granola → Linear</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .priority-high { color: #ef4444; }
+    .priority-medium { color: #f59e0b; }
+    .priority-low { color: #22c55e; }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div id="app" class="container mx-auto px-4 py-8 max-w-6xl">
+    <!-- Header -->
+    <header class="mb-8">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-3xl font-bold text-gray-900">Granola → Linear</h1>
+          <p class="text-gray-600 mt-1">Review meeting action items before creating Linear issues</p>
+        </div>
+        <div class="flex gap-3">
+          <button onclick="loadPending()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+            Refresh
+          </button>
+          <button onclick="showSettings()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+            Settings
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div id="stats" class="mt-6 grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div class="bg-white p-4 rounded-lg shadow-sm">
+          <div class="text-2xl font-bold text-gray-900" id="stat-pending">-</div>
+          <div class="text-sm text-gray-500">Pending Review</div>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm">
+          <div class="text-2xl font-bold text-green-600" id="stat-approved">-</div>
+          <div class="text-sm text-gray-500">Approved</div>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm">
+          <div class="text-2xl font-bold text-blue-600" id="stat-created">-</div>
+          <div class="text-sm text-gray-500">Created in Linear</div>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm">
+          <div class="text-2xl font-bold text-gray-400" id="stat-rejected">-</div>
+          <div class="text-sm text-gray-500">Rejected</div>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm">
+          <div class="text-2xl font-bold text-purple-600" id="stat-meetings">-</div>
+          <div class="text-sm text-gray-500">Meetings Processed</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="mb-6 border-b border-gray-200">
+      <nav class="flex gap-6">
+        <button onclick="switchTab('pending')" id="tab-pending" class="tab-btn pb-3 text-indigo-600 border-b-2 border-indigo-600 font-medium">
+          Pending Review
+        </button>
+        <button onclick="switchTab('approved')" id="tab-approved" class="tab-btn pb-3 text-gray-500 hover:text-gray-700">
+          Approved
+        </button>
+        <button onclick="switchTab('created')" id="tab-created" class="tab-btn pb-3 text-gray-500 hover:text-gray-700">
+          Created
+        </button>
+        <button onclick="switchTab('meetings')" id="tab-meetings" class="tab-btn pb-3 text-gray-500 hover:text-gray-700">
+          Meetings
+        </button>
+      </nav>
+    </div>
+
+    <!-- Bulk Actions -->
+    <div id="bulk-actions" class="mb-4 hidden">
+      <div class="flex items-center gap-3 bg-indigo-50 p-3 rounded-lg">
+        <input type="checkbox" id="select-all" onchange="toggleSelectAll()" class="w-4 h-4">
+        <label for="select-all" class="text-sm text-gray-600">Select all</label>
+        <span class="text-sm text-gray-500" id="selected-count">0 selected</span>
+        <div class="flex-1"></div>
+        <button onclick="bulkApprove()" class="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700">
+          Approve Selected
+        </button>
+        <button onclick="bulkReject()" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
+          Reject Selected
+        </button>
+      </div>
+    </div>
+
+    <!-- Content Area -->
+    <div id="content" class="space-y-4">
+      <div class="text-center py-12 text-gray-500">Loading...</div>
+    </div>
+
+    <!-- Create All Button (for approved tab) -->
+    <div id="create-all-section" class="hidden mt-6">
+      <button onclick="createAllIssues()" class="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium">
+        Create All Approved Issues in Linear
+      </button>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold">Settings</h2>
+        <button onclick="hideSettings()" class="text-gray-400 hover:text-gray-600">&times;</button>
+      </div>
+
+      <div class="space-y-6">
+        <!-- Linear Team -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Linear Team</label>
+          <select id="team-select" class="w-full p-2 border rounded-lg">
+            <option value="">Loading teams...</option>
+          </select>
+        </div>
+
+        <!-- Custom Prompt -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">AI Extraction Prompt</label>
+          <textarea id="custom-prompt" rows="10" class="w-full p-3 border rounded-lg font-mono text-sm"
+            placeholder="Leave blank to use default prompt"></textarea>
+          <button onclick="resetPrompt()" class="mt-2 text-sm text-indigo-600 hover:underline">
+            Reset to default
+          </button>
+        </div>
+
+        <!-- Connection Status -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Connection Status</label>
+          <div id="connection-status" class="p-3 bg-gray-50 rounded-lg text-sm">
+            Checking...
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 flex gap-3">
+        <button onclick="saveSettings()" class="flex-1 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+          Save Settings
+        </button>
+        <button onclick="hideSettings()" class="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '';
+    let currentTab = 'pending';
+    let items = [];
+    let selectedItems = new Set();
+    let defaultPrompt = '';
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      loadStats();
+      loadPending();
+    });
+
+    // API Helpers
+    async function api(path, options = {}) {
+      const res = await fetch(`${API_BASE}/api${path}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+      return res.json();
+    }
+
+    // Load stats
+    async function loadStats() {
+      const stats = await api('/stats');
+      document.getElementById('stat-pending').textContent = stats.pendingReview;
+      document.getElementById('stat-approved').textContent = stats.approved;
+      document.getElementById('stat-created').textContent = stats.created;
+      document.getElementById('stat-rejected').textContent = stats.rejected;
+      document.getElementById('stat-meetings').textContent = stats.totalMeetingsProcessed;
+    }
+
+    // Tab switching
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('text-indigo-600', 'border-b-2', 'border-indigo-600', 'font-medium');
+        btn.classList.add('text-gray-500');
+      });
+      document.getElementById(`tab-${tab}`).classList.add('text-indigo-600', 'border-b-2', 'border-indigo-600', 'font-medium');
+      document.getElementById(`tab-${tab}`).classList.remove('text-gray-500');
+
+      selectedItems.clear();
+      updateSelectedCount();
+
+      if (tab === 'pending') loadPending();
+      else if (tab === 'approved') loadApproved();
+      else if (tab === 'created') loadCreated();
+      else if (tab === 'meetings') loadMeetings();
+    }
+
+    // Load pending items
+    async function loadPending() {
+      document.getElementById('bulk-actions').classList.remove('hidden');
+      document.getElementById('create-all-section').classList.add('hidden');
+
+      const data = await api('/action-items/pending');
+      items = data.actionItems;
+      renderActionItems(items);
+      loadStats();
+    }
+
+    // Load approved items
+    async function loadApproved() {
+      document.getElementById('bulk-actions').classList.add('hidden');
+
+      const data = await api('/action-items?status=approved');
+      items = data.actionItems;
+      renderActionItems(items, false);
+
+      if (items.length > 0) {
+        document.getElementById('create-all-section').classList.remove('hidden');
+      } else {
+        document.getElementById('create-all-section').classList.add('hidden');
+      }
+      loadStats();
+    }
+
+    // Load created items
+    async function loadCreated() {
+      document.getElementById('bulk-actions').classList.add('hidden');
+      document.getElementById('create-all-section').classList.add('hidden');
+
+      const data = await api('/action-items?status=created');
+      items = data.actionItems;
+      renderCreatedItems(items);
+      loadStats();
+    }
+
+    // Load meetings
+    async function loadMeetings() {
+      document.getElementById('bulk-actions').classList.add('hidden');
+      document.getElementById('create-all-section').classList.add('hidden');
+
+      const data = await api('/meetings');
+      renderMeetings(data.meetings);
+      loadStats();
+    }
+
+    // Render action items
+    function renderActionItems(items, showActions = true) {
+      if (items.length === 0) {
+        document.getElementById('content').innerHTML = `
+          <div class="text-center py-12 text-gray-500">
+            <div class="text-4xl mb-4">✨</div>
+            <p>No items to review</p>
+            <p class="text-sm mt-2">New action items will appear here when meetings are processed</p>
+          </div>
+        `;
+        return;
+      }
+
+      document.getElementById('content').innerHTML = items.map(item => `
+        <div class="bg-white rounded-lg shadow-sm p-4 fade-in" data-id="${item.id}">
+          <div class="flex items-start gap-3">
+            ${showActions ? `<input type="checkbox" class="item-checkbox mt-1 w-4 h-4" data-id="${item.id}" onchange="updateSelectedCount()">` : ''}
+            <div class="flex-1">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="priority-${item.priority.toLowerCase()} text-xs font-medium uppercase">${item.priority}</span>
+                ${item.assignee && item.assignee !== 'Unassigned' ? `<span class="text-xs bg-gray-100 px-2 py-0.5 rounded">👤 ${item.assignee}</span>` : ''}
+                ${item.deadline ? `<span class="text-xs bg-yellow-100 px-2 py-0.5 rounded">⏰ ${item.deadline}</span>` : ''}
+              </div>
+              <h3 class="font-medium text-gray-900">${item.title}</h3>
+              <p class="text-sm text-gray-600 mt-1">${item.description || ''}</p>
+              <div class="text-xs text-gray-400 mt-2">
+                From: ${item.meetingTitle} • ${new Date(item.meetingDate).toLocaleDateString()}
+              </div>
+            </div>
+            ${showActions ? `
+              <div class="flex gap-2">
+                <button onclick="approveItem('${item.id}')" class="px-3 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200">
+                  ✓ Approve
+                </button>
+                <button onclick="rejectItem('${item.id}')" class="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200">
+                  ✗ Reject
+                </button>
+              </div>
+            ` : `
+              <button onclick="createIssue('${item.id}')" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">
+                Create Issue
+              </button>
+            `}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Render created items
+    function renderCreatedItems(items) {
+      if (items.length === 0) {
+        document.getElementById('content').innerHTML = `
+          <div class="text-center py-12 text-gray-500">
+            <p>No issues created yet</p>
+          </div>
+        `;
+        return;
+      }
+
+      document.getElementById('content').innerHTML = items.map(item => `
+        <div class="bg-white rounded-lg shadow-sm p-4 fade-in">
+          <div class="flex items-start gap-3">
+            <div class="flex-1">
+              <h3 class="font-medium text-gray-900">${item.title}</h3>
+              <p class="text-sm text-gray-600 mt-1">${item.description || ''}</p>
+              <div class="text-xs text-gray-400 mt-2">
+                From: ${item.meetingTitle} • ${new Date(item.meetingDate).toLocaleDateString()}
+              </div>
+            </div>
+            ${item.linearIssue ? `
+              <a href="${item.linearIssue.url}" target="_blank" class="px-3 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200">
+                ${item.linearIssue.identifier} →
+              </a>
+            ` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Render meetings
+    function renderMeetings(meetings) {
+      if (meetings.length === 0) {
+        document.getElementById('content').innerHTML = `
+          <div class="text-center py-12 text-gray-500">
+            <p>No meetings found</p>
+            <p class="text-sm mt-2">Make sure Granola is running and has recorded meetings</p>
+          </div>
+        `;
+        return;
+      }
+
+      document.getElementById('content').innerHTML = meetings.map(meeting => `
+        <div class="bg-white rounded-lg shadow-sm p-4 fade-in">
+          <div class="flex items-center gap-3">
+            <div class="flex-1">
+              <h3 class="font-medium text-gray-900">${meeting.title}</h3>
+              <div class="text-sm text-gray-500 mt-1">
+                ${new Date(meeting.date).toLocaleString()}
+                ${meeting.participants?.length ? ` • ${meeting.participants.join(', ')}` : ''}
+              </div>
+              <div class="flex gap-2 mt-2">
+                ${meeting.hasNotes ? '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Has Notes</span>' : ''}
+                ${meeting.hasTranscript ? '<span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Has Transcript</span>' : ''}
+                ${meeting.processed ? '<span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">Processed</span>' : ''}
+              </div>
+            </div>
+            ${!meeting.processed ? `
+              <button onclick="processMeeting('${meeting.id}')" class="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                Process
+              </button>
+            ` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Action handlers
+    async function approveItem(id) {
+      await api(`/action-items/${id}/approve`, { method: 'POST' });
+      loadPending();
+    }
+
+    async function rejectItem(id) {
+      await api(`/action-items/${id}/reject`, { method: 'POST' });
+      loadPending();
+    }
+
+    async function createIssue(id) {
+      const result = await api(`/action-items/${id}/create-issue`, { method: 'POST' });
+      if (result.success) {
+        alert(`Created: ${result.issue.identifier}`);
+        loadApproved();
+      } else {
+        alert(`Error: ${result.error}`);
+      }
+    }
+
+    async function createAllIssues() {
+      if (!confirm('Create Linear issues for all approved items?')) return;
+
+      const result = await api('/action-items/create-all', { method: 'POST' });
+      const success = result.results.filter(r => r.success).length;
+      const failed = result.results.filter(r => !r.success).length;
+
+      alert(`Created ${success} issues. ${failed ? `Failed: ${failed}` : ''}`);
+      loadApproved();
+    }
+
+    async function processMeeting(id) {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = 'Processing...';
+
+      try {
+        const result = await api(`/meetings/${id}/process`, { method: 'POST' });
+        alert(`Extracted ${result.count} action item(s)`);
+        loadMeetings();
+      } catch (e) {
+        alert('Error processing meeting');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Process';
+      }
+    }
+
+    // Selection handlers
+    function toggleSelectAll() {
+      const checked = document.getElementById('select-all').checked;
+      document.querySelectorAll('.item-checkbox').forEach(cb => {
+        cb.checked = checked;
+        if (checked) selectedItems.add(cb.dataset.id);
+        else selectedItems.delete(cb.dataset.id);
+      });
+      updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+      selectedItems.clear();
+      document.querySelectorAll('.item-checkbox:checked').forEach(cb => {
+        selectedItems.add(cb.dataset.id);
+      });
+      document.getElementById('selected-count').textContent = `${selectedItems.size} selected`;
+    }
+
+    async function bulkApprove() {
+      if (selectedItems.size === 0) return;
+      await api('/action-items/bulk-approve', {
+        method: 'POST',
+        body: { ids: Array.from(selectedItems) }
+      });
+      loadPending();
+    }
+
+    async function bulkReject() {
+      if (selectedItems.size === 0) return;
+      await api('/action-items/bulk-reject', {
+        method: 'POST',
+        body: { ids: Array.from(selectedItems) }
+      });
+      loadPending();
+    }
+
+    // Settings
+    async function showSettings() {
+      document.getElementById('settings-modal').classList.remove('hidden');
+
+      // Load teams
+      const teamsData = await api('/linear/teams');
+      const select = document.getElementById('team-select');
+      select.innerHTML = teamsData.teams.map(t =>
+        `<option value="${t.id}">${t.name} (${t.key})</option>`
+      ).join('');
+
+      // Load current settings
+      const settings = await api('/settings');
+      defaultPrompt = settings.defaultPrompt;
+      document.getElementById('custom-prompt').value = settings.customPrompt || '';
+      if (settings.linearTeamId) {
+        select.value = settings.linearTeamId;
+      }
+
+      // Check connection
+      const health = await api('/health');
+      document.getElementById('connection-status').innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="${health.linear.connected ? 'text-green-600' : 'text-red-600'}">
+            ${health.linear.connected ? '✓' : '✗'} Linear
+          </span>
+          ${health.linear.connected ? `<span class="text-gray-500">(${health.linear.user.email})</span>` : ''}
+        </div>
+      `;
+    }
+
+    function hideSettings() {
+      document.getElementById('settings-modal').classList.add('hidden');
+    }
+
+    function resetPrompt() {
+      document.getElementById('custom-prompt').value = defaultPrompt;
+    }
+
+    async function saveSettings() {
+      const settings = {
+        linearTeamId: document.getElementById('team-select').value,
+        customPrompt: document.getElementById('custom-prompt').value || null,
+      };
+      await api('/settings', { method: 'PATCH', body: settings });
+      hideSettings();
+      alert('Settings saved');
+    }
+  </script>
+</body>
+</html>
