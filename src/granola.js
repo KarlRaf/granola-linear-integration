@@ -33,42 +33,41 @@ export function loadGranolaData() {
 function extractMeetings(data) {
   const meetings = [];
 
-  // Granola stores documents in various places in the cache
-  // The structure includes documents, panels, transcripts, etc.
+  // Granola v3 cache structure: { cache: JSON string with { state: { documents: {...}, transcripts: {...} } } }
+  let docs = {};
+  let transcripts = {};
 
-  // Try to find documents/meetings in common locations
-  const docs = data.documents || data.docs || data.meetings || [];
-
-  // Also check for a flat structure with document entries
-  if (Array.isArray(docs)) {
-    for (const doc of docs) {
-      const meeting = normalizeMeeting(doc);
-      if (meeting) {
-        meetings.push(meeting);
-      }
-    }
-  }
-
-  // Check if data itself is an array of meetings
-  if (Array.isArray(data)) {
-    for (const item of data) {
-      const meeting = normalizeMeeting(item);
-      if (meeting) {
-        meetings.push(meeting);
-      }
-    }
-  }
-
-  // Check for nested document structure
-  if (data.data && typeof data.data === 'object') {
-    for (const key of Object.keys(data.data)) {
-      const item = data.data[key];
-      if (item && typeof item === 'object') {
-        const meeting = normalizeMeeting(item);
-        if (meeting) {
-          meetings.push(meeting);
+  // Handle nested cache string structure (Granola v3)
+  if (data.cache && typeof data.cache === 'string') {
+    try {
+      const inner = JSON.parse(data.cache);
+      if (inner.state) {
+        if (inner.state.documents) {
+          docs = inner.state.documents;
+        }
+        if (inner.state.transcripts) {
+          transcripts = inner.state.transcripts;
         }
       }
+    } catch (e) {
+      console.error('Failed to parse inner cache:', e.message);
+    }
+  }
+
+  // Fallback: Try direct locations
+  if (Object.keys(docs).length === 0) {
+    docs = data.documents || data.docs || data.meetings || {};
+  }
+
+  // Handle docs as object (keyed by ID) or array
+  const docList = Array.isArray(docs) ? docs : Object.values(docs);
+
+  for (const doc of docList) {
+    // Merge transcript if available (transcripts are keyed by document_id)
+    const docTranscript = transcripts[doc.id];
+    const meeting = normalizeMeeting(doc, docTranscript);
+    if (meeting) {
+      meetings.push(meeting);
     }
   }
 
@@ -80,8 +79,10 @@ function extractMeetings(data) {
 
 /**
  * Normalize a meeting object to a consistent structure
+ * @param {Object} doc - The document object
+ * @param {Array} externalTranscript - Transcript array from state.transcripts (optional)
  */
-function normalizeMeeting(doc) {
+function normalizeMeeting(doc, externalTranscript = null) {
   if (!doc || typeof doc !== 'object') {
     return null;
   }
@@ -95,24 +96,33 @@ function normalizeMeeting(doc) {
   const title = doc.title || doc.name || doc.subject || 'Untitled Meeting';
   const date = doc.createdAt || doc.created_at || doc.date || doc.startTime || new Date().toISOString();
 
-  // Extract notes/content from panels or direct content
+  // Extract notes - prefer markdown/plain versions over structured JSON
   let notes = '';
-  if (doc.panels && Array.isArray(doc.panels)) {
+  if (doc.notes_markdown) {
+    notes = doc.notes_markdown;
+  } else if (doc.notes_plain) {
+    notes = doc.notes_plain;
+  } else if (doc.panels && Array.isArray(doc.panels)) {
     notes = doc.panels
       .map(p => p.content || p.text || p.notes || '')
       .filter(Boolean)
       .join('\n\n');
-  } else if (doc.notes) {
-    notes = typeof doc.notes === 'string' ? doc.notes : JSON.stringify(doc.notes);
+  } else if (doc.notes && typeof doc.notes === 'string') {
+    notes = doc.notes;
   } else if (doc.content) {
-    notes = typeof doc.content === 'string' ? doc.content : JSON.stringify(doc.content);
+    notes = typeof doc.content === 'string' ? doc.content : '';
   } else if (doc.enhancedNotes) {
     notes = doc.enhancedNotes;
   }
 
-  // Extract transcript if available
+  // Extract transcript - check external transcript first (from state.transcripts)
   let transcript = '';
-  if (doc.transcript) {
+  if (externalTranscript && Array.isArray(externalTranscript)) {
+    transcript = externalTranscript
+      .map(t => t.text || '')
+      .filter(Boolean)
+      .join(' ');
+  } else if (doc.transcript) {
     if (typeof doc.transcript === 'string') {
       transcript = doc.transcript;
     } else if (Array.isArray(doc.transcript)) {
@@ -126,9 +136,13 @@ function normalizeMeeting(doc) {
       .join('\n');
   }
 
-  // Extract participants
+  // Extract participants from calendar event or people
   let participants = [];
-  if (doc.participants && Array.isArray(doc.participants)) {
+  if (doc.google_calendar_event?.attendees) {
+    participants = doc.google_calendar_event.attendees
+      .map(a => a.email || a.displayName || '')
+      .filter(Boolean);
+  } else if (doc.participants && Array.isArray(doc.participants)) {
     participants = doc.participants.map(p => p.name || p.email || p);
   } else if (doc.attendees && Array.isArray(doc.attendees)) {
     participants = doc.attendees.map(p => p.name || p.email || p);
