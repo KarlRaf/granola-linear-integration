@@ -1,9 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { CONFIG } from './config.js';
 
-const anthropic = new Anthropic({
-  apiKey: CONFIG.anthropicApiKey,
-});
+// Lazy initialization to allow env to load first
+let anthropic = null;
+function getClient() {
+  if (!anthropic) {
+    anthropic = new Anthropic({
+      apiKey: CONFIG.anthropicApiKey || process.env.ANTHROPIC_API_KEY,
+    });
+  }
+  return anthropic;
+}
 
 const DEFAULT_PROMPT = `You are an expert at analyzing meeting notes and transcripts to extract actionable items.
 
@@ -65,7 +72,7 @@ export async function extractActionItems(meeting, customPrompt = null) {
   }
 
   try {
-    const response = await anthropic.messages.create({
+    const response = await getClient().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
       messages: [
