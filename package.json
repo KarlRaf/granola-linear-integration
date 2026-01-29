@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "watch": "node src/watcher.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "open": "node src/server.js & sleep 2 && open http://localhost:3847",
+    "process": "node src/notify.js"
   },
   "dependencies": {
     "@linear/sdk": "^29.0.0",
